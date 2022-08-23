@@ -6,28 +6,33 @@ import {
   // MenuItem,
   PanelSection,
   PanelSectionRow,
-  Router,
   ServerAPI,
   //showContextMenu,
   staticClasses,
 } from "decky-frontend-lib";
-import { useState, VFC } from "react";
+import { useState, VFC, Fragment } from "react";
 import { FaBluetooth } from "react-icons/fa";
 
 interface GetDeviceInfoArgs {
   device: string
 }
 
+interface ToggleDeviceInfoArgs {
+  device: string,
+  status: boolean
+}
+
 interface PairedDevice {
   mac: string,
   name: string,
-  connected: boolean
+  connected: boolean,
+  icon?: string
 }
 
 const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
   const [devices, setDevices] = useState<Array<PairedDevice>>([]);
 
-  const onClick = async () => {
+  const refreshDevices = async () => {
     const result = await serverAPI.callPluginMethod<{}, string>(
       "get_paired_devices",
       {}
@@ -41,35 +46,42 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
     }
   };
 
-  const deviceDisplay = devices.map((device, index) => 
+  const deviceDisplay = devices.map((device) => 
   {
     return (
       <ButtonItem 
         layout="below"
-        onClick={() => {}}
+        onClick={async () =>  {
+            await toggleDeviceConnection(serverAPI, device);
+            await refreshDevices();
+          }
+        }
       >
-        {index} {device.name} {device.mac} {String(device.connected)}
+        {device.name} {device.connected ? "- Connected" : ""}
       </ButtonItem>
     )
   });
 
   return (
-    <PanelSection title="Panel Section">
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() =>
-            onClick()
-          }
-        >
-          Get Bluetooth devices
-        </ButtonItem>
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        {deviceDisplay}
-      </PanelSectionRow>
-    </PanelSection>
+    <Fragment>
+      <PanelSection>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() =>
+              refreshDevices()
+            }
+          >
+            Get Bluetooth devices
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+      <PanelSection title="Paired Devices">
+        <PanelSectionRow>
+          {deviceDisplay}
+        </PanelSectionRow>
+      </PanelSection>
+    </Fragment>
   );
 };
 
@@ -84,11 +96,14 @@ async function parsePariedDevices(serverApi: ServerAPI, pairedDevices: string) {
     pairedDevicesWithInfo.push({
       mac,
       name,
-      connected: /Connected: yes/.test(rawInfo.result),
-      //icon: /Icon: (.*)/.exec(rawInfo)[1],
+      connected: /Connected: yes/.test(rawInfo.result)
     });
   }
   return pairedDevicesWithInfo;
+}
+
+async function toggleDeviceConnection(serverApi: ServerAPI, device: PairedDevice) {
+  await serverApi.callPluginMethod<ToggleDeviceInfoArgs, string>('toggle_device_connection', { device: device.mac, status: device.connected })
 }
 
 export default definePlugin((serverApi: ServerAPI) => {

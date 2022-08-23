@@ -16,7 +16,7 @@ class Plugin:
         device = subprocess.run(["bluetoothctl", "info", device], text=True, capture_output=True).stdout
         return device
 
-    async def set_device_connection(self, device, status):
+    async def toggle_device_connection(self, device, status):
         if not status:
             stdout = subprocess.run(["bluetoothctl", "connect", device], text=True, capture_output=True).stdout
         else:
