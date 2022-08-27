@@ -1,105 +1,151 @@
 import {
   ButtonItem,
   definePlugin,
-  DialogButton,
-  Menu,
-  MenuItem,
+  //DialogButton,
+  // Menu,
+  // MenuItem,
   PanelSection,
   PanelSectionRow,
-  Router,
   ServerAPI,
-  showContextMenu,
+  //showContextMenu,
   staticClasses,
 } from "decky-frontend-lib";
-import { VFC } from "react";
-import { FaShip } from "react-icons/fa";
+import { useState, VFC, Fragment, useEffect, useCallback } from "react";
+import { FaBluetooth } from "react-icons/fa";
 
-import logo from "../assets/logo.png";
+interface GetDeviceInfoArgs {
+  device: string
+}
 
-// interface AddMethodArgs {
-//   left: number;
-//   right: number;
-// }
+interface ToggleDeviceInfoArgs {
+  device: string,
+  status: boolean
+}
 
-const Content: VFC<{ serverAPI: ServerAPI }> = ({}) => {
-  // const [result, setResult] = useState<number | undefined>();
+interface PairedDevice {
+  mac: string,
+  name: string,
+  connected: boolean,
+  icon?: string
+}
 
-  // const onClick = async () => {
-  //   const result = await serverAPI.callPluginMethod<AddMethodArgs, number>(
-  //     "add",
-  //     {
-  //       left: 2,
-  //       right: 2,
-  //     }
-  //   );
-  //   if (result.success) {
-  //     setResult(result.result);
-  //   }
-  // };
+const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
+  const [devices, setDevices] = useState<Array<PairedDevice>>([]);
+  const [refreshCount, setRefreshCount] = useState(0);
+  const [isTogglingDevice, setIsTogglingDevice] = useState<[boolean, PairedDevice | null]>([false, null]);
+  const [pairingError, setPairingError] = useState("");
+  const [togglingError, setTogglingError] = useState("");
 
-  return (
-    <PanelSection title="Panel Section">
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={(e) =>
-            showContextMenu(
-              <Menu label="Menu" cancelText="CAAAANCEL" onCancel={() => {}}>
-                <MenuItem onSelected={() => {}}>Item #1</MenuItem>
-                <MenuItem onSelected={() => {}}>Item #2</MenuItem>
-                <MenuItem onSelected={() => {}}>Item #3</MenuItem>
-              </Menu>,
-              e.currentTarget ?? window
-            )
+  const getPairedDevices = useCallback(async () => {
+    const result = await serverAPI.callPluginMethod<{}, string>(
+      "get_paired_devices",
+      {}
+    );
+
+    if (result.success) {
+      const pairedDevices = await parsePariedDevices(serverAPI, result.result)
+      setDevices(pairedDevices);
+      setPairingError("");
+    }
+    else {
+      setDevices([]);
+      setPairingError("Error retrieving devices");
+    } 
+  }, []);
+
+  const toggleDeviceConnection = useCallback(async (serverApi: ServerAPI, device: PairedDevice) => {
+    setIsTogglingDevice([true, device]);
+    const result = await serverApi.callPluginMethod<ToggleDeviceInfoArgs, string>('toggle_device_connection', { device: device.mac, status: device.connected });
+
+    if (result.success) {
+      setTogglingError("");
+    }
+    else {
+      setTogglingError(`Error ${device.connected ? "disconnecting from " : "connecting to "} ${device.name}`);
+    }
+
+    setIsTogglingDevice([false, device]);
+  }, [])
+
+
+  const refreshDevices = async () => {
+    setRefreshCount(refreshCount + 1);
+  };
+  useEffect(() => {
+    getPairedDevices();
+  }, [refreshCount]);
+
+  const deviceDisplay = devices.map((device) => 
+  {
+    return (
+      <ButtonItem 
+        layout="below"
+        onClick={async () =>  {
+            await toggleDeviceConnection(serverAPI, device);
+            await refreshDevices();
           }
-        >
-          Server says yolo
-        </ButtonItem>
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <img src={logo} />
-        </div>
-      </PanelSectionRow>
-
-      <PanelSectionRow>
-        <ButtonItem
-          layout="below"
-          onClick={() => {
-            Router.CloseSideMenus();
-            Router.Navigate("/decky-plugin-test");
-          }}
-        >
-          Router
-        </ButtonItem>
-      </PanelSectionRow>
-    </PanelSection>
-  );
-};
-
-const DeckyPluginRouterTest: VFC = () => {
-  return (
-    <div style={{ marginTop: "50px", color: "white" }}>
-      Hello World!
-      <DialogButton onClick={() => Router.NavigateToStore()}>
-        Go to Store
-      </DialogButton>
-    </div>
-  );
-};
-
-export default definePlugin((serverApi: ServerAPI) => {
-  serverApi.routerHook.addRoute("/decky-plugin-test", DeckyPluginRouterTest, {
-    exact: true,
+        }
+      >
+        {device.name} {device.connected ? "- Connected" : ""}
+      </ButtonItem>
+    )
   });
 
+  if (isTogglingDevice[0] && isTogglingDevice[1]) {
+    const device = isTogglingDevice[1];
+    return <PanelSection>
+      <PanelSectionRow>
+        {device.connected ? "Disconnecting from " : "Connecting to "} {device.name}
+      </PanelSectionRow>
+    </PanelSection>
+  }
+
+  return (
+    <Fragment>
+      <PanelSection>
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={() =>
+              refreshDevices()
+            }
+          >
+            Refresh Bluetooth Devices
+          </ButtonItem>
+        </PanelSectionRow>
+      </PanelSection>
+      <PanelSection title="Paired Devices">
+        <PanelSectionRow>
+          {pairingError}
+          {togglingError}
+          {deviceDisplay}
+        </PanelSectionRow>
+      </PanelSection>
+    </Fragment>
+  );
+};
+
+async function parsePariedDevices(serverApi: ServerAPI, pairedDevices: string) {
+  // Get MAC address and device name of paired devices
+  const pairedDevicesWithInfo: Array<PairedDevice> = [];
+  for (let captureGroups of [...pairedDevices.matchAll(/Device (([0-9A-F]{2}[:-]){5}([0-9A-F]{2})) (.*)$/gmi)]) {
+    const mac = captureGroups[1];
+    const name = captureGroups[4];
+
+    const rawInfo = await serverApi.callPluginMethod<GetDeviceInfoArgs, string>('get_device_info', { device: mac });
+    pairedDevicesWithInfo.push({
+      mac,
+      name,
+      connected: /Connected: yes/.test(rawInfo.result)
+    });
+  }
+  return pairedDevicesWithInfo;
+}
+
+export default definePlugin((serverApi: ServerAPI) => {
   return {
-    title: <div className={staticClasses.Title}>Example Plugin</div>,
+    title: <div className={staticClasses.Title}>Bluetooth 2.0</div>,
     content: <Content serverAPI={serverApi} />,
-    icon: <FaShip />,
-    onDismount() {
-      serverApi.routerHook.removeRoute("/decky-plugin-test");
-    },
+    icon: <FaBluetooth />,
   };
 });
