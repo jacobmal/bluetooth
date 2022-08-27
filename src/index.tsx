@@ -10,7 +10,7 @@ import {
   //showContextMenu,
   staticClasses,
 } from "decky-frontend-lib";
-import { useState, VFC, Fragment } from "react";
+import { useState, VFC, Fragment, useEffect, useCallback } from "react";
 import { FaBluetooth } from "react-icons/fa";
 
 interface GetDeviceInfoArgs {
@@ -31,20 +31,49 @@ interface PairedDevice {
 
 const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
   const [devices, setDevices] = useState<Array<PairedDevice>>([]);
+  const [refreshCount, setRefreshCount] = useState(0);
+  const [isTogglingDevice, setIsTogglingDevice] = useState<[boolean, PairedDevice | null]>([false, null]);
+  const [pairingError, setPairingError] = useState("");
+  const [togglingError, setTogglingError] = useState("");
 
-  const refreshDevices = async () => {
+  const getPairedDevices = useCallback(async () => {
     const result = await serverAPI.callPluginMethod<{}, string>(
       "get_paired_devices",
       {}
     );
+
     if (result.success) {
       const pairedDevices = await parsePariedDevices(serverAPI, result.result)
       setDevices(pairedDevices);
+      setPairingError("");
     }
     else {
       setDevices([]);
+      setPairingError("Error retrieving devices");
+    } 
+  }, []);
+
+  const toggleDeviceConnection = useCallback(async (serverApi: ServerAPI, device: PairedDevice) => {
+    setIsTogglingDevice([true, device]);
+    const result = await serverApi.callPluginMethod<ToggleDeviceInfoArgs, string>('toggle_device_connection', { device: device.mac, status: device.connected });
+
+    if (result.success) {
+      setTogglingError("");
     }
+    else {
+      setTogglingError(`Error ${device.connected ? "disconnecting from " : "connecting to "} ${device.name}`);
+    }
+
+    setIsTogglingDevice([false, device]);
+  }, [])
+
+
+  const refreshDevices = async () => {
+    setRefreshCount(refreshCount + 1);
   };
+  useEffect(() => {
+    getPairedDevices();
+  }, [refreshCount]);
 
   const deviceDisplay = devices.map((device) => 
   {
@@ -62,6 +91,15 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
     )
   });
 
+  if (isTogglingDevice[0] && isTogglingDevice[1]) {
+    const device = isTogglingDevice[1];
+    return <PanelSection>
+      <PanelSectionRow>
+        {device.connected ? "Disconnecting from " : "Connecting to "} {device.name}
+      </PanelSectionRow>
+    </PanelSection>
+  }
+
   return (
     <Fragment>
       <PanelSection>
@@ -72,12 +110,14 @@ const Content: VFC<{ serverAPI: ServerAPI }> = ({serverAPI}) => {
               refreshDevices()
             }
           >
-            Get Bluetooth devices
+            Refresh Bluetooth Devices
           </ButtonItem>
         </PanelSectionRow>
       </PanelSection>
       <PanelSection title="Paired Devices">
         <PanelSectionRow>
+          {pairingError}
+          {togglingError}
           {deviceDisplay}
         </PanelSectionRow>
       </PanelSection>
@@ -100,10 +140,6 @@ async function parsePariedDevices(serverApi: ServerAPI, pairedDevices: string) {
     });
   }
   return pairedDevicesWithInfo;
-}
-
-async function toggleDeviceConnection(serverApi: ServerAPI, device: PairedDevice) {
-  await serverApi.callPluginMethod<ToggleDeviceInfoArgs, string>('toggle_device_connection', { device: device.mac, status: device.connected })
 }
 
 export default definePlugin((serverApi: ServerAPI) => {

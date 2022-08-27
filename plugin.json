@@ -1,10 +1,10 @@
 {
-  "name": "Bluetooth 2.0",
+  "name": "Bluetooth",
   "author": "Jake Allen",
   "flags": ["debug"],
   "publish": {
     "tags": ["bluetooth"],
-    "description": "Decky example plugin.",
-    "image": "https://opengraph.githubassets.com/1/SteamDeckHomebrew/PluginLoader"
+    "description": "Plugin simplifying the connect and disconnect process for paired bluetooth devices.",
+    "image": ""
   }
 }
